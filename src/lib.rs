@@ -106,7 +106,7 @@ pub struct Shtc3<I2C: i2c::I2c> {
 
 impl<I2C, E> Shtc3<I2C>
 where
-    I2C: i2c::I2c<Error = E> + 'static,
+    I2C: i2c::I2c<Error = E>,
 {
     pub fn new(i2c: I2C) -> Self {
         Self { i2c }
