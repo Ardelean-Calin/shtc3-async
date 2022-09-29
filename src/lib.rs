@@ -175,16 +175,24 @@ where
 
     pub async fn measure(
         &mut self,
+        power_mode: PowerMode,
         delay: &mut impl DelayUs,
     ) -> Result<Measurement, SHTC3Error<E>> {
+        // Get the duration of a measurement.
+        let delay_us = match power_mode {
+            PowerMode::LowPower => 800,
+            PowerMode::NormalMode => 12100,
+        };
+
         self.send_command(Command::Measure {
-            power_mode: PowerMode::NormalMode,
+            power_mode,
             order: TemperatureFirst,
         })
         .await?;
 
+        // Delay until data is ready.
         delay
-            .delay_us(12100)
+            .delay_us(delay_us)
             .await
             .map_err(|_| SHTC3Error::TimingError)?;
 
