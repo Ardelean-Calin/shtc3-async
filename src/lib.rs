@@ -100,7 +100,10 @@ impl Command {
 }
 
 #[derive(Debug, Default)]
-pub struct Shtc3<I2C: i2c::I2c> {
+pub struct Shtc3<I2C>
+where
+    I2C: i2c::I2c,
+{
     i2c: I2C,
 }
 
