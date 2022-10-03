@@ -1,5 +1,4 @@
 #![no_std]
-#![feature(async_fn_in_trait)]
 
 use core::prelude::rust_2021::*;
 
