@@ -1,4 +1,5 @@
 #![no_std]
+#![feature(async_fn_in_trait)]
 
 use core::prelude::rust_2021::*;
 
@@ -12,14 +13,14 @@ pub use types::*;
 use defmt::write;
 #[cfg(feature = "defmt")]
 use defmt::Format;
+use embedded_hal::blocking::i2c::{Read, Write};
 use embedded_hal_async::delay::DelayUs;
-use embedded_hal_async::i2c::{self};
 
 /// All possible errors in this crate
 #[derive(Debug, PartialEq, Clone)]
-pub enum SHTC3Error<E> {
+pub enum SHTC3Error {
     /// I²C bus error
-    I2c(E),
+    I2c,
     /// CRC checksum validation failed
     Crc,
     /// Some kind of timing related error.
@@ -27,9 +28,21 @@ pub enum SHTC3Error<E> {
 }
 
 #[cfg(feature = "defmt")]
-impl<E> Format for SHTC3Error<E> {
+impl Format for SHTC3Error {
     fn format(&self, fmt: defmt::Formatter) {
         write!(fmt, "{:?}", self);
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl Format for Measurement {
+    fn format(&self, fmt: defmt::Formatter) {
+        write!(
+            fmt,
+            "Temp: {}C\tHum: {}%",
+            self.temperature.as_degrees_celsius(),
+            self.humidity.as_percent()
+        );
     }
 }
 
@@ -99,23 +112,19 @@ impl Command {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct Shtc3<I2C>
-where
-    I2C: i2c::I2c,
-{
+pub struct Shtc3<I2C> {
     i2c: I2C,
 }
 
 impl<I2C, E> Shtc3<I2C>
 where
-    I2C: i2c::I2c<Error = E>,
+    I2C: Write<Error = E> + Read<Error = E>,
 {
     pub fn new(i2c: I2C) -> Self {
         Self { i2c }
     }
 
-    fn validate_crc(&self, buf: &[u8]) -> Result<(), SHTC3Error<E>> {
+    fn validate_crc(&self, buf: &[u8]) -> Result<(), SHTC3Error> {
         for chunk in buf.chunks(3) {
             if chunk.len() == 3 && crc8(&[chunk[0], chunk[1]]) != chunk[2] {
                 return Err(SHTC3Error::Crc);
@@ -124,27 +133,25 @@ where
         Ok(())
     }
 
-    async fn send_command(&mut self, command: Command) -> Result<(), SHTC3Error<E>> {
+    fn send_command(&mut self, command: Command) -> Result<(), SHTC3Error> {
         self.i2c
             .write(ADDRESS, &command.as_bytes())
-            .await
-            .map_err(SHTC3Error::I2c)
+            .map_err(|_| SHTC3Error::I2c)
     }
 
-    async fn read_with_crc(&mut self, mut buf: &mut [u8]) -> Result<(), SHTC3Error<E>> {
+    fn read_with_crc(&mut self, mut buf: &mut [u8]) -> Result<(), SHTC3Error> {
         self.i2c
             .read(ADDRESS, &mut buf)
-            .await
-            .map_err(SHTC3Error::I2c)?;
+            .map_err(|_| SHTC3Error::I2c)?;
         self.validate_crc(buf)
     }
 
     /// Get the device ID of your SHTC3.
-    pub async fn get_device_id(&mut self) -> Result<u8, SHTC3Error<E>> {
+    pub fn get_device_id(&mut self) -> Result<u8, SHTC3Error> {
         let mut buf = [0u8; 3];
 
-        self.send_command(Command::ReadIdRegister).await?;
-        self.read_with_crc(&mut buf).await?;
+        self.send_command(Command::ReadIdRegister)?;
+        self.read_with_crc(&mut buf)?;
 
         let ident = u16::from_be_bytes([buf[0], buf[1]]);
 
@@ -153,23 +160,23 @@ where
         Ok(lsb | msb)
     }
 
-    pub async fn reset(&mut self) -> Result<(), SHTC3Error<E>> {
-        self.send_command(Command::SoftwareReset).await?;
+    pub async fn reset(&mut self) -> Result<(), SHTC3Error> {
+        self.send_command(Command::SoftwareReset)?;
         Ok(())
     }
 
-    pub async fn wakeup(&mut self, delay: &mut impl DelayUs) -> Result<(), SHTC3Error<E>> {
+    pub async fn wakeup(&mut self, delay: &mut impl DelayUs) -> Result<(), SHTC3Error> {
         const WAKEUP_TIME_US: u32 = 240;
 
-        self.send_command(Command::WakeUp).await?;
+        self.send_command(Command::WakeUp)?;
         delay
             .delay_us(WAKEUP_TIME_US)
             .await
             .map_err(|_| SHTC3Error::TimingError)
     }
 
-    pub async fn sleep(&mut self) -> Result<(), SHTC3Error<E>> {
-        self.send_command(Command::Sleep).await?;
+    pub fn sleep(&mut self) -> Result<(), SHTC3Error> {
+        self.send_command(Command::Sleep)?;
         Ok(())
     }
 
@@ -177,7 +184,7 @@ where
         &mut self,
         power_mode: PowerMode,
         delay: &mut impl DelayUs,
-    ) -> Result<Measurement, SHTC3Error<E>> {
+    ) -> Result<Measurement, SHTC3Error> {
         // Get the duration of a measurement.
         let delay_us = match power_mode {
             PowerMode::LowPower => 800,
@@ -187,8 +194,7 @@ where
         self.send_command(Command::Measure {
             power_mode,
             order: TemperatureFirst,
-        })
-        .await?;
+        })?;
 
         // Delay until data is ready.
         delay
@@ -196,36 +202,39 @@ where
             .await
             .map_err(|_| SHTC3Error::TimingError)?;
 
-        let measurement = self.get_measurement_result().await?;
+        let measurement = self.get_measurement_result()?;
 
         Ok(measurement)
     }
 
     /// Read the result of a temperature / humidity measurement.
-    pub async fn get_measurement_result(&mut self) -> Result<Measurement, SHTC3Error<E>> {
-        let raw = self.get_raw_measurement_result().await?;
+    pub fn get_measurement_result(&mut self) -> Result<Measurement, SHTC3Error> {
+        let raw = self.get_raw_measurement_result()?;
         Ok(raw.into())
     }
 
     /// Read the raw result of a combined temperature / humidity measurement.
-    pub async fn get_raw_measurement_result(&mut self) -> Result<RawMeasurement, SHTC3Error<E>> {
+    pub fn get_raw_measurement_result(&mut self) -> Result<RawMeasurement, SHTC3Error> {
         let mut buf = [0; 6];
-        self.read_with_crc(&mut buf).await?;
+        self.read_with_crc(&mut buf)?;
 
         Ok(RawMeasurement {
             temperature: u16::from_be_bytes([buf[0], buf[1]]),
             humidity: u16::from_be_bytes([buf[3], buf[4]]),
         })
     }
+
+    /// Simple async sample function. During this time I can communicate with other sensors on the
+    /// I2C bus.
+    pub async fn sample(
+        &mut self,
+        mut delay: &mut impl DelayUs,
+    ) -> Result<Measurement, SHTC3Error> {
+        self.wakeup(delay).await?;
+        self.measure(PowerMode::LowPower, &mut delay).await?;
+        let result = self.get_measurement_result();
+        // Go to sleep to preserve power!
+        self.sleep()?;
+        result
+    }
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-
-//     // #[test]
-//     // fn it_works() {
-//     //     let result = add(2, 2);
-//     //     assert_eq!(result, 4);
-//     // }
-// }
