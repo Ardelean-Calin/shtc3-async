@@ -8,7 +8,7 @@ pub struct Humidity(i32);
 
 /// A combined temperature / humidity measurement.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct Measurement {
+pub struct SHTC3Result {
     /// The measured temperature.
     pub temperature: Temperature,
     /// The measured humidity.
@@ -27,7 +27,7 @@ pub struct RawMeasurement {
     pub humidity: u16,
 }
 
-impl From<RawMeasurement> for Measurement {
+impl From<RawMeasurement> for SHTC3Result {
     fn from(other: RawMeasurement) -> Self {
         Self {
             temperature: Temperature::from_raw(other.temperature),
@@ -151,12 +151,12 @@ mod tests {
         };
 
         // std::convert::From
-        let measurement1 = Measurement::from(raw);
+        let measurement1 = SHTC3Result::from(raw);
         assert_eq!(measurement1.temperature.0, 23730);
         assert_eq!(measurement1.humidity.0, 62968);
 
         // std::convert::Into
-        let measurement2: Measurement = raw.into();
+        let measurement2: SHTC3Result = raw.into();
         assert_eq!(measurement2.temperature.0, 23730);
         assert_eq!(measurement2.humidity.0, 62968);
 

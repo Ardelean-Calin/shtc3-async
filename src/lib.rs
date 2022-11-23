@@ -34,11 +34,11 @@ impl Format for SHTC3Error {
 }
 
 #[cfg(feature = "defmt")]
-impl Format for Measurement {
+impl Format for SHTC3Result {
     fn format(&self, fmt: defmt::Formatter) {
         write!(
             fmt,
-            "Temp: {}C\tHum: {}%",
+            "Temp: {}C Hum: {}%",
             self.temperature.as_degrees_celsius(),
             self.humidity.as_percent()
         );
@@ -183,7 +183,7 @@ where
         &mut self,
         power_mode: PowerMode,
         delay: &mut impl DelayUs,
-    ) -> Result<Measurement, SHTC3Error> {
+    ) -> Result<SHTC3Result, SHTC3Error> {
         // Get the duration of a measurement.
         let delay_us = match power_mode {
             PowerMode::LowPower => 800,
@@ -207,7 +207,7 @@ where
     }
 
     /// Read the result of a temperature / humidity measurement.
-    pub fn get_measurement_result(&mut self) -> Result<Measurement, SHTC3Error> {
+    pub fn get_measurement_result(&mut self) -> Result<SHTC3Result, SHTC3Error> {
         let raw = self.get_raw_measurement_result()?;
         Ok(raw.into())
     }
@@ -228,12 +228,17 @@ where
     pub async fn sample(
         &mut self,
         mut delay: &mut impl DelayUs,
-    ) -> Result<Measurement, SHTC3Error> {
+    ) -> Result<SHTC3Result, SHTC3Error> {
         self.wakeup(delay).await?;
         self.measure(PowerMode::LowPower, &mut delay).await?;
         let result = self.get_measurement_result();
         // Go to sleep to preserve power!
         self.sleep()?;
         result
+    }
+
+    /// Returns the i2c bus found inside.
+    pub fn drop(self) -> I2C {
+        self.i2c
     }
 }
