@@ -4,7 +4,7 @@ pub struct Temperature(i32);
 
 /// A humidity measurement.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct Humidity(i32);
+pub struct Humidity(u32);
 
 /// A combined temperature / humidity measurement.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -13,6 +13,15 @@ pub struct SHTC3Result {
     pub temperature: Temperature,
     /// The measured humidity.
     pub humidity: Humidity,
+}
+
+impl Default for SHTC3Result {
+    fn default() -> Self {
+        Self {
+            temperature: Default::default(),
+            humidity: Default::default(),
+        }
+    }
 }
 
 /// A combined raw temperature / humidity measurement.
@@ -36,6 +45,13 @@ impl From<RawMeasurement> for SHTC3Result {
     }
 }
 
+impl Default for Temperature {
+    fn default() -> Self {
+        // Default 25 degrees C
+        Self(2500)
+    }
+}
+
 impl Temperature {
     /// Create a new `Temperature` from a raw measurement result.
     pub fn from_raw(raw: u16) -> Self {
@@ -53,6 +69,13 @@ impl Temperature {
     }
 }
 
+impl Default for Humidity {
+    fn default() -> Self {
+        // Default 50% humidity
+        Self(5000)
+    }
+}
+
 impl Humidity {
     /// Create a new `Humidity` from a raw measurement result.
     pub fn from_raw(raw: u16) -> Self {
@@ -60,7 +83,7 @@ impl Humidity {
     }
 
     /// Return relative humidity in 1/1000 %RH.
-    pub fn as_millipercent(&self) -> i32 {
+    pub fn as_millipercent(&self) -> u32 {
         self.0
     }
 
@@ -84,8 +107,8 @@ fn convert_temperature(temp_raw: u16) -> i32 {
 /// Formula (datasheet 5.11): 100 * (val / 2^16),
 /// optimized for fixed point math.
 #[inline]
-fn convert_humidity(humi_raw: u16) -> i32 {
-    (((humi_raw as u32) * 12500) >> 13) as i32
+fn convert_humidity(humi_raw: u16) -> u32 {
+    (((humi_raw as u32) * 12500) >> 13) as u32
 }
 
 #[cfg(test)]
